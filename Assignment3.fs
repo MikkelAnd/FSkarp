@@ -226,4 +226,15 @@ let rec trans ((fe:Fexpr), (x:float)) =
         List.concat [resa;[EXP]]
 
 // 3.9 (HR 7.2)
-//type ComplexNumber ...
+module ComplexNumber =
+    type ComplexNumber =
+        | C of float * float
+
+    type ComplexNumber with
+        static member (-) (C(a,b)) (C(c,d)) = C(a-c,b-d)
+        static member (+) (C(a,b)) (C(c,d)) = C(a+c,b+d)
+        static member (*) (C(a,b)) (C(c,d)) = C((a*c)-(b*d),(b*c)+(a*d))
+        static member (/) (C(a,b)) (C(c,d)) = ((a*c + b*d)/(c*c+d*d)) + ((b*c-a*d)/(c*c+d*d))
+
+    let makeComplex (a,b) = (C(a,b))
+    let getValue (C(a,b)) = (a, b)
