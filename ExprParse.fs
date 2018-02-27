@@ -1,20 +1,7 @@
 module ExprParse
 
-(* Grammar:
-
-E    = T Eopt .
-Eopt = "+" T Eopt | e .
-T    = F Topt .
-Topt = "*" F Topt | e .
-F    = P Fopt .
-Fopt = "^" Int | e .
-P    = Int [ Float | Var | "(" E ")" .
-
-e is the empty sequence.
-*)
-
 type terminal =
-  Add | Mul | Pwr | Lpar | Rpar | Int of int | Float of float | Var of string
+  Add | Mul | Power | LeftPar | RightPar | Int of int | Float of float | Var of string
 
 let isblank c = System.Char.IsWhiteSpace c
 let isdigit c  = System.Char.IsDigit c
@@ -49,9 +36,9 @@ let scan s =
       [] -> []
     | '+' :: cr -> Add :: sc cr      
     | '*' :: cr -> Mul :: sc cr      
-    | '^' :: cr -> Pwr :: sc cr
-    | '(' :: cr -> Lpar :: sc cr     
-    | ')' :: cr -> Rpar :: sc cr     
+    | '^' :: cr -> Power :: sc cr
+    | '(' :: cr -> LeftPar :: sc cr     
+    | ')' :: cr -> RightPar :: sc cr     
     | '-' :: c :: cr when isdigit c -> let (cs1, t) = scnum(cr, -1 * intval c)
                                        t :: sc cs1
     | c :: cr when isdigit c -> let (cs1, t) = scnum(cr, intval c) 
@@ -63,18 +50,18 @@ let scan s =
   sc (explode s)
   
 let rec insertMult = function
-  Float r :: Var x :: ts -> [] // TO DO
-| Float r1 :: Float r2 :: ts -> [] // TO DO
-| Float r :: Int i :: ts -> [] // TO DO
-| Var x :: Float r :: ts -> [] // TO DO
-| Var x1 :: Var x2 :: ts -> [] // TO DO
-| Var x :: Int i :: ts -> [] // TO DO
-| Int i :: Float r :: ts -> [] // TO DO
-| Int i :: Var x :: ts -> [] // TO DO
-| Int i1 :: Int i2 :: ts -> [] // TO DO
-| Float r :: Lpar :: ts -> [] // TO DO
-| Var x :: Lpar :: ts -> [] // TO DO
-| Int i :: Lpar :: ts -> [] // TO DO
+| Float r :: Var x :: ts -> Float r :: Mul :: insertMult (Var x :: ts)
+| Float r1 :: Float r2 :: ts -> Float r1 :: Mul :: insertMult (Float r2 :: ts)
+| Float r :: Int i :: ts -> Float r :: Mul :: insertMult (Int i :: ts)
+| Var x :: Float r :: ts -> Var x :: Mul :: insertMult (Float r :: ts)
+| Var x1 :: Var x2 :: ts -> Var x1 :: Mul :: insertMult (Var x2 :: ts)
+| Var x :: Int i :: ts -> Var x :: Mul :: insertMult (Int i :: ts)
+| Int i :: Float r :: ts -> Int i :: Mul :: insertMult (Float r :: ts)
+| Int i :: Var x :: ts -> Int i :: Mul :: insertMult (Var x :: ts)
+| Int i1 :: Int i2 :: ts -> Int i1 :: Mul :: insertMult (Int i2 :: ts)
+| Float r :: LeftPar :: ts -> Float r :: Mul :: insertMult (LeftPar :: ts)
+| Var x :: LeftPar :: ts -> Var x :: Mul :: insertMult (LeftPar :: ts)
+| Int i :: LeftPar :: ts -> Int i :: Mul :: insertMult (LeftPar :: ts)
 | t :: ts -> t :: insertMult ts
 | [] -> []
   
@@ -90,17 +77,35 @@ exception Parseerror
 let rec E (ts:terminal list) = (T >> Eopt) ts
 and Eopt (ts, inval) = 
   match ts with
-    Add :: tr -> ...
+  | Add :: tr -> let (ts1, tv) = T tr
+                 Eopt (ts1, (FAdd(inval,tv)))
   | _ -> (ts, inval)
-and T ts = ...
-and Topt (ts, inval) = ... 
-and F ts = ...
-and Fopt (ts,inval) = ...
-and P ts = ...
-
+and T ts = (F >> Topt) ts
+and Topt (ts, inval) =
+  match ts with
+  | Mul :: tr -> let (ts1, fv) = F tr
+                 Topt (ts1, (FMult(inval,fv)))
+  | _ -> (ts, inval)
+and F ts = (P >> Fopt) ts
+and Fopt (ts, inval) =
+  match ts with
+  | Power :: Int i :: tr -> let (ts1, pv) = P tr
+                            Fopt (ts1, (FExponent(inval,i)))
+  | _ -> (ts, inval)
+and P ts = 
+  match ts with
+  | Int i :: tr -> (tr, FNum (float i))
+  | Float f :: tr -> (tr, FNum f)
+  | Var v :: tr -> (tr, FVar v)
+  | LeftPar :: tr -> let (ts1, ev) = E tr
+                     match ts1 with
+                     | RightPar :: tr -> (tr, ev)
+                     | _ -> raise Parseerror
+  | _ -> raise Parseerror
+  
 let parse ts = 
   match E ts with
-    ([], result) -> result
+  | ([], result) -> result
   | _ -> raise Parseerror
 
 let parseStr s = (scan >> insertMult >> parse) s
